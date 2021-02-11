@@ -16,7 +16,7 @@
 #include <errno.h>
 #include <stdio.h>
 #include <stdlib.h>
-#include <zlib.h>
+#include <miniz.h>
 
 /*
  * zlib resources:
@@ -85,10 +85,10 @@ static struct buffer __compress(const void* mem,
 
     errno = NBT_OK;
 
-    z_stream stream = {
-        .zalloc   = Z_NULL,
-        .zfree    = Z_NULL,
-        .opaque   = Z_NULL,
+    mz_stream stream = {
+        .zalloc   = NULL,
+        .zfree    = NULL,
+        .opaque   = NULL,
         .next_in  = (void*)mem,
         .avail_in = len
     };
@@ -101,13 +101,13 @@ static struct buffer __compress(const void* mem,
     if(strat == STRAT_GZIP)
         windowbits += 16;
 
-    if(deflateInit2(&stream,
-                    Z_DEFAULT_COMPRESSION,
-                    Z_DEFLATED,
+    if(mz_deflateInit2(&stream,
+                    MZ_DEFAULT_COMPRESSION,
+                    MZ_DEFLATED,
                     windowbits,
                     8,
-                    Z_DEFAULT_STRATEGY
-                   ) != Z_OK)
+                    MZ_DEFAULT_STRATEGY
+                   ) != MZ_OK)
     {
         errno = NBT_EZ;
         return BUFFER_INIT;
@@ -125,21 +125,21 @@ static struct buffer __compress(const void* mem,
         stream.next_out  = ret.data + ret.len;
         stream.avail_out = CHUNK_SIZE;
 
-        if(deflate(&stream, Z_FINISH) == Z_STREAM_ERROR)
+        if(mz_deflate(&stream, MZ_FINISH) == MZ_STREAM_ERROR)
             goto compression_error;
 
         ret.len += CHUNK_SIZE - stream.avail_out;
 
     } while(stream.avail_out == 0);
 
-    (void)deflateEnd(&stream);
+    (void)mz_deflateEnd(&stream);
     return ret;
 
 compression_error:
     if(errno == NBT_OK)
         errno = NBT_EZ;
 
-    (void)deflateEnd(&stream);
+    (void)mz_deflateEnd(&stream);
     buffer_free(&ret);
     return BUFFER_INIT;
 }
@@ -154,17 +154,17 @@ static struct buffer __decompress(const void* mem, size_t len)
 
     errno = NBT_OK;
 
-    z_stream stream = {
-        .zalloc   = Z_NULL,
-        .zfree    = Z_NULL,
-        .opaque   = Z_NULL,
+    mz_stream stream = {
+        .zalloc   = NULL,
+        .zfree    = NULL,
+        .opaque   = NULL,
         .next_in  = (void*)mem,
         .avail_in = len
     };
 
     /* "Add 32 to windowBits to enable zlib and gzip decoding with automatic
      * header detection" */
-    if(inflateInit2(&stream, 15 + 32) != Z_OK)
+    if(mz_inflateInit2(&stream, 15 + 32) != MZ_OK)
     {
         errno = NBT_EZ;
         return BUFFER_INIT;
@@ -182,13 +182,13 @@ static struct buffer __decompress(const void* mem, size_t len)
         stream.avail_out = CHUNK_SIZE;
         stream.next_out  = (unsigned char*)ret.data + ret.len;
 
-        switch((zlib_ret = inflate(&stream, Z_NO_FLUSH)))
+        switch((zlib_ret = mz_inflate(&stream, MZ_NO_FLUSH)))
         {
-        case Z_MEM_ERROR:
+        case MZ_MEM_ERROR:
             errno = NBT_EMEM;
             /* fall through */
 
-        case Z_DATA_ERROR: case Z_NEED_DICT:
+        case MZ_DATA_ERROR: case MZ_NEED_DICT:
             goto decompression_error;
 
         default:
@@ -202,8 +202,8 @@ static struct buffer __decompress(const void* mem, size_t len)
      * If we're at the end of the input data, we'd sure as hell be at the end
      * of the zlib stream.
      */
-    if(zlib_ret != Z_STREAM_END) goto decompression_error;
-    (void)inflateEnd(&stream);
+    if(zlib_ret != MZ_STREAM_END) goto decompression_error;
+    (void)mz_inflateEnd(&stream);
 
     return ret;
 
@@ -211,7 +211,7 @@ decompression_error:
     if(errno == NBT_OK)
         errno = NBT_EZ;
 
-    (void)inflateEnd(&stream);
+    (void)mz_inflateEnd(&stream);
 
     buffer_free(&ret);
     return BUFFER_INIT;
